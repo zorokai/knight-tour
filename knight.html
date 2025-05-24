@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Knight’s Tour – Red on Visit</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+  <style>
+    body {
+      background: black;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+      margin: 0;
+    }
+    canvas {
+      display: block;
+      margin: auto;
+    }
+    #ui {
+      padding: 10px;
+    }
+    button, select {
+      background: #222;
+      color: white;
+      border: 1px solid white;
+      padding: 8px;
+      font-size: 14px;
+      margin: 3px;
+      border-radius: 5px;
+    }
+    #status {
+      margin-top: 5px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <select id="boardSize">
+      <option value="6">6x6</option>
+      <option value="7">7x7</option>
+      <option value="8" selected>8x8</option>
+    </select>
+    <label for="lineWidth">Line Width:</label>
+    <select id="lineWidth">
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3" selected>3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+      <option value="9">9</option>
+      <option value="10">10</option>
+    </select>
+    <button onclick="resetGame()">Reset</button>
+    <button onclick="undoMove()">Undo</button>
+    <button onclick="toggleHighlight()">Highlight: ON</button>
+    <button onclick="autoSolve()">Solve</button>
+    <button onclick="nextStep()">▶</button>
+    <div id="status"></div>
+  </div>
+
+  <script>
+    let boardSize = 8;
+    let cellSize;
+    let knightPos = null;
+    let visited = [];
+    let moveStack = [];
+    let startTime, timerRunning = false;
+    let totalMoves = 0;
+    let highlightMoves = true;
+    let solverMoves = [];
+    let solverIndex = 0;
+    let selectingStart = true;
+    let lineThickness = 3;
+
+    function setup() {
+      createCanvas(windowWidth, windowWidth);
+      noLoop();
+      initGame();
+    }
+
+    function initGame() {
+      boardSize = int(document.getElementById("boardSize").value);
+      lineThickness = int(document.getElementById("lineWidth").value);
+      cellSize = width / boardSize;
+      visited = Array.from({ length: boardSize }, () => Array(boardSize).fill(false));
+      knightPos = null;
+      moveStack = [];
+      totalMoves = 0;
+      startTime = null;
+      timerRunning = false;
+      selectingStart = true;
+      solverMoves = [];
+      solverIndex = 0;
+      redraw();
+    }
+
+    function draw() {
+      background(0);
+      drawBoard();
+      if (knightPos) drawKnight();
+      if (highlightMoves && knightPos && !solverMoves.length) drawValidMoves();
+      updateStatus();
+    }
+
+    function drawBoard() {
+      stroke(255);
+      strokeWeight(lineThickness);
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          fill(visited[y][x] ? '#D00000' : 0); // Red if visited, else black
+          rect(x * cellSize, y * cellSize, cellSize, cellSize);
+        }
+      }
+
+      if (selectingStart) {
+        noStroke();
+        for (let y = 0; y < boardSize; y++) {
+          for (let x = 0; x < boardSize; x++) {
+            fill(255, 255, 255, 30);
+            rect(x * cellSize, y * cellSize, cellSize, cellSize);
+          }
+        }
+        stroke(255);
+      }
+    }
+
+    function drawKnight() {
+      noStroke();
+      fill('white');
+      ellipse(
+        knightPos.x * cellSize + cellSize / 2,
+        knightPos.y * cellSize + cellSize / 2,
+        cellSize * 0.6
+      );
+    }
+
+    function drawValidMoves() {
+      noStroke();
+      let moves = getKnightMoves(knightPos.x, knightPos.y);
+      for (let move of moves) {
+        if (!visited[move.y][move.x]) {
+          fill(255, 255, 255, 100);
+          rect(move.x * cellSize, move.y * cellSize, cellSize, cellSize);
+        }
+      }
+      stroke(255);
+    }
+
+    function mousePressed() {
+      if (mouseY > width) return;
+      let x = floor(mouseX / cellSize);
+      let y = floor(mouseY / cellSize);
+
+      if (selectingStart) {
+        knightPos = { x, y };
+        visited[y][x] = true;
+        moveStack.push({ x, y });
+        totalMoves = 1;
+        startTime = millis();
+        timerRunning = true;
+        selectingStart = false;
+        redraw();
+        return;
+      }
+
+      let valid = getKnightMoves(knightPos.x, knightPos.y).some(m => m.x === x && m.y === y && !visited[y][x]);
+      if (valid) {
+        knightPos = { x, y };
+        visited[y][x] = true;
+        moveStack.push({ x, y });
+        totalMoves++;
+        redraw();
+      }
+    }
+
+    function getKnightMoves(x, y) {
+      let offsets = [
+        [1, 2], [2, 1], [-1, 2], [-2, 1],
+        [1, -2], [2, -1], [-1, -2], [-2, -1]
+      ];
+      return offsets.map(([dx, dy]) => ({ x: x + dx, y: y + dy }))
+        .filter(p => p.x >= 0 && p.x < boardSize && p.y >= 0 && p.y < boardSize);
+    }
+
+    function resetGame() {
+      initGame();
+      redraw();
+    }
+
+    function undoMove() {
+      if (moveStack.length > 1) {
+        visited[knightPos.y][knightPos.x] = false;
+        moveStack.pop();
+        knightPos = { ...moveStack[moveStack.length - 1] };
+        totalMoves--;
+        redraw();
+      }
+    }
+
+    function toggleHighlight() {
+      highlightMoves = !highlightMoves;
+      document.querySelector("button[onclick='toggleHighlight()']").innerText =
+        `Highlight: ${highlightMoves ? "ON" : "OFF"}`;
+      redraw();
+    }
+
+    function updateStatus() {
+      let elapsed = startTime ? floor((millis() - startTime) / 1000) : 0;
+      let efficiency = elapsed > 0 ? floor((totalMoves / elapsed) * 100) : 0;
+      document.getElementById("status").innerText =
+        `Moves: ${totalMoves} | Time: ${elapsed}s | Efficiency: ${efficiency}`;
+    }
+
+    function autoSolve() {
+      if (!knightPos) return;
+      solverMoves = warnsdorff(knightPos.x, knightPos.y);
+      solverIndex = 0;
+    }
+
+    function nextStep() {
+      if (solverMoves.length && solverIndex < solverMoves.length) {
+        let move = solverMoves[solverIndex];
+        knightPos = { x: move.x, y: move.y };
+        visited[move.y][move.x] = true;
+        moveStack.push({ x: move.x, y: move.y });
+        totalMoves++;
+        solverIndex++;
+        redraw();
+      }
+    }
+
+    function warnsdorff(startX, startY) {
+      let path = [{ x: startX, y: startY }];
+      let tempVisited = Array.from({ length: boardSize }, () => Array(boardSize).fill(false));
+      tempVisited[startY][startX] = true;
+
+      function dfs(x, y, depth) {
+        if (depth === boardSize * boardSize) return true;
+        let moves = getKnightMoves(x, y).filter(m => !tempVisited[m.y][m.x]);
+        moves.sort((a, b) =>
+          getKnightMoves(a.x, a.y).filter(n => !tempVisited[n.y][n.x]).length -
+          getKnightMoves(b.x, b.y).filter(n => !tempVisited[n.y][n.x]).length
+        );
+        for (let move of moves) {
+          tempVisited[move.y][move.x] = true;
+          path.push({ x: move.x, y: move.y });
+          if (dfs(move.x, move.y, depth + 1)) return true;
+          tempVisited[move.y][move.x] = false;
+          path.pop();
+        }
+        return false;
+      }
+
+      dfs(startX, startY, 1);
+      path.shift();
+      return path;
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowWidth);
+      cellSize = width / boardSize;
+      redraw();
+    }
+  </script>
+</body>
+</html>
